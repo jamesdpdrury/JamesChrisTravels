@@ -268,3 +268,264 @@ padding: 0.2rem 0.6rem;
     font-size: 25px;
   }
 }
+
+/* =========================
+   CALENDAR VIEW
+   ========================= */
+.calendar {
+  width: 100%;
+  max-width: 900px;
+  margin: 15px auto 25px auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 16px;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.calendar-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.calendar-hint {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.calendar-month {
+  margin-top: 18px;
+}
+
+.calendar-month h3 {
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.calendar-weekday {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #666;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.calendar-cell {
+  border: 1px solid #e5e5e5;
+  background: #fafafa;
+  border-radius: 10px;
+  height: 42px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.calendar-cell:hover:not(:disabled) {
+  background: #f1f1f1;
+  transform: translateY(-1px);
+}
+
+.calendar-cell.blank {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.calendar-cell.inactive {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.calendar-cell.active {
+  background: #fff;
+  border: 2px solid var(--orange);
+  font-weight: 600;
+}
+
+.calendar-cell.today {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+
+.calendar-cell.past {
+  opacity: 0.25;
+}
+
+/* =========================
+   CALENDAR HEADER + NAV
+   ========================= */
+.calendar-toggle {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-family: Poppins, sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 12px;
+}
+
+.calendar-arrow {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.calendar-arrow:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.calendar-month-label {
+  font-family: Poppins, sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+/* =========================
+   TRIP PICKER POPUP
+   ========================= */
+.trip-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.trip-picker-modal {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(20,20,20,0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+  backdrop-filter: blur(12px);
+}
+
+.trip-picker-modal h3 {
+  font-family: Poppins, sans-serif;
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.trip-picker-date {
+  opacity: 0.7;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.trip-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trip-picker-btn {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  font-family: Poppins, sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trip-picker-btn:hover {
+  background: rgba(255,255,255,0.10);
+}
+
+.trip-picker-cancel {
+  margin-top: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: none;
+  background: rgba(255,255,255,0.10);
+  font-family: Poppins, sans-serif;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* =========================
+   CALENDAR DOTS
+   ========================= */
+.calendar-daynum {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.calendar-dots {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.calendar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.calendar-dot-more {
+  font-size: 10px;
+  font-weight: 900;
+  opacity: 0.75;
+  line-height: 1;
+}
+
+.trip-share-link {
+  margin: 8px 0 18px 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.8;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.trip-share-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
