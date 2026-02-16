@@ -7,6 +7,7 @@ const TRIPS = [
   { name: "New York", id: "New York Feb 26" },
   { name: "Steffi's Wedding", id: "Pisa May 26" },
   { name: "Virgin Voyage", id: "Virgin Voyage June 26" },
+  { name: "Center Parcs", id: "Center Parcs June 26" },
   { name: "Norway", id: "P&O July 26" },
   { name: "Paris", id: "Paris Aug 26" },
   { name: "LAX", id: "LAX Aug 26" },
@@ -32,6 +33,7 @@ const TYPE_META = {
 
   // NEW TYPES
   Drive: { icon: "car-front", color: "var(--drive)" },
+  Food: { icon: "hamburger", color: "var(--food)" },
   Parking: { icon: "parking-circle", color: "var(--parking)" },
   "Theme Park": { icon: "ferris-wheel", color: "var(--themepark)" }
 };
@@ -178,7 +180,7 @@ function makeItem(row, timestamp, phase = null, duration = null, dateVal, timeVa
     switch(type) {
       case "Hotel": detailsFormatted = detailsFormatted.map(line => `Room Type: ${line}`); break;
       case "Flight":
-        if(detailsFormatted[0]) detailsFormatted[0] = `#: ${detailsFormatted[0]}`;
+        if(detailsFormatted[0]) detailsFormatted[0] = `Flight #: ${detailsFormatted[0]}`;
         if(detailsFormatted[1]) detailsFormatted[1] = `Aircraft: ${detailsFormatted[1]}`;
         if(detailsFormatted[2]) detailsFormatted[2] = `Cabin: ${detailsFormatted[2]}`;
         break;
@@ -191,7 +193,7 @@ function makeItem(row, timestamp, phase = null, duration = null, dateVal, timeVa
         break;
       case "Train":
         if(detailsFormatted[0]) detailsFormatted[0] = `Train Company: ${detailsFormatted[0]}`;
-        if(detailsFormatted[1]) detailsFormatted[1] = `#: ${detailsFormatted[1]}`;
+        if(detailsFormatted[1]) detailsFormatted[1] = `Train #: ${detailsFormatted[1]}`;
         if(detailsFormatted[2]) detailsFormatted[2] = `Coach Type: ${detailsFormatted[2]}`;
         if(detailsFormatted[3]) detailsFormatted[3] = `Seat #: ${detailsFormatted[3]}`;
         break;
