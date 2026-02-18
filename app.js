@@ -30,63 +30,51 @@ const TYPE_META = {
   Bus: { icon: "bus", color: "var(--bus)" },
   Port: { icon: "map-pin", color: "var(--port)" },
   Uber: { icon: "car", color: "var(--uber)" },
+
   Drive: { icon: "car-front", color: "var(--drive)" },
-  Parking: { icon: "parking-circle", color: "var(--parking)" },
   Food: { icon: "hamburger", color: "var(--food)" },
+  Parking: { icon: "parking-circle", color: "var(--parking)" },
   "Theme Park": { icon: "ferris-wheel", color: "var(--themepark)" }
 };
 
 /***********************
- * SETTINGS
- ***********************/
-const HIDE_PAST_DAYS = true;
-const MAX_CALENDAR_DOTS = 4;
-
-/***********************
  * GLOBAL STATE
  ***********************/
-let GLOBAL_DATE_MAP = {};
-let GLOBAL_MIN_DATE = null;
-let GLOBAL_MAX_DATE = null;
+let activeTripId = null;
 
-let CALENDAR_CURRENT_MONTH = null;
-let CALENDAR_VISIBLE = true;
+// Calendar state
+const calendarState = {
+  year: new Date().getFullYear(),
+  month: new Date().getMonth(), // 0-11
+  dataByDate: {}, // "YYYY-MM-DD" => [{tripId, tripName}]
+};
 
 /***********************
- * HELPERS
+ * SHARE MODE
  ***********************/
-function pad2(n) {
-  return String(n).padStart(2, "0");
+function isShareMode() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("share") === "1";
 }
 
-function toISODateLocal(dateObj) {
-  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(dateObj.getDate())}`;
+function buildShareUrl(tripId) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?trip=${encodeURIComponent(tripId)}&share=1`;
 }
 
-function startOfDayLocal(dateObj) {
-  return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+function applyShareModeUI() {
+  if (!isShareMode()) return;
+
+  const header = document.getElementById("app-header");
+  const cal = document.getElementById("calendar-wrap");
+
+  if (header) header.style.display = "none";
+  if (cal) cal.style.display = "none";
 }
 
-function todayStart() {
-  return startOfDayLocal(new Date());
-}
-
-function isDayInPast(dayStr) {
-  const dayDate = startOfDayLocal(new Date(dayStr));
-  return dayDate < todayStart();
-}
-
-function formatPrettyDate(dateObj) {
-  const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const day = dateObj.getDate();
-  const suffix = (d => {
-    if (d > 3 && d < 21) return 'th';
-    switch (d % 10) { case 1: return 'st'; case 2: return 'nd'; case 3: return 'rd'; default: return 'th'; }
-  })(day);
-  return `${weekdays[dateObj.getDay()]} ${day}${suffix} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
-}
-
+/***********************
+ * HELPER FUNCTIONS
+ ***********************/
 function toUTC(date, time, utcOffset) {
   const d = new Date(`${date} ${time} UTC`);
   return d.getTime() - utcOffset * 3600000;
@@ -97,31 +85,44 @@ function formatTimeSheet(dateStr, timeStr, utcOffset) {
   return offset !== 0 ? `${timeStr} (${offset >= 0 ? "+" : ""}${offset}h)` : timeStr;
 }
 
-/***********************
- * URL PARAMS
- ***********************/
-function getTripFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("trip");
+function formatPrettyDate(dateObj) {
+  const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const day = dateObj.getDate();
+  const suffix = (d => {
+    if (d > 3 && d < 21) return "th";
+    switch (d % 10) { case 1: return "st"; case 2: return "nd"; case 3: return "rd"; default: return "th"; }
+  })(day);
+  return `${weekdays[dateObj.getDay()]} ${day}${suffix} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
 }
 
-function setTripInUrl(tripId) {
-  const params = new URLSearchParams(window.location.search);
-  params.set("trip", tripId);
-  const newUrl = `${window.location.pathname}?${params.toString()}`;
-  window.history.pushState({}, "", newUrl);
+function toISODate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-function isShareMode() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("share") === "1";
+function startOfTodayLocal() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
 
-function buildShareUrl(tripId) {
-  const params = new URLSearchParams();
-  params.set("trip", tripId);
-  params.set("share", "1");
-  return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+function scrollToDayISO(iso) {
+  const el = document.getElementById(`day-${iso}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function getTripStartDate(items) {
+  const realItems = items.filter(i => i.type !== "None");
+  if (realItems.length === 0) return null;
+
+  const earliest = realItems.reduce(
+    (min, i) => (i.timestamp < min ? i.timestamp : min),
+    realItems[0].timestamp
+  );
+  return new Date(earliest);
 }
 
 /***********************
@@ -132,97 +133,6 @@ async function fetchSheetRows(tabName) {
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch tab data");
   return res.json();
-}
-
-/***********************
- * CALCULATE DURATION
- ***********************/
-function calculateDuration(type, start, end) {
-  switch(type) {
-    case "Hotel": {
-      const nights = Math.floor(
-        (startOfDayLocal(new Date(end)) - startOfDayLocal(new Date(start))) / (1000*60*60*24)
-      );
-      const n = nights < 1 ? 1 : nights;
-      return `${n} night${n !== 1 ? "s" : ""}`;
-    }
-    case "Cruise": {
-      const days = Math.ceil((end-start)/(1000*60*60*24));
-      return `${days} day${days>1?"s":""}`;
-    }
-    default: {
-      const mins = Math.round((end-start)/60000);
-      return `${Math.floor(mins/60)}h ${mins%60}m`;
-    }
-  }
-}
-
-/***********************
- * MAKE ITEM
- ***********************/
-function makeItem(row, timestamp, phase = null, duration = null, dateVal, timeVal, utcVal, typeOverride = null) {
-  let title = row.TITLE;
-  const type = typeOverride || row.TYPE;
-
-  if (type === "Uber") {
-    const parts = title.split(">");
-    if (parts.length > 1) title = "Uber to " + parts[1].trim();
-    else title = "Uber to " + title.replace(/\bUber\b/i,"").trim();
-  }
-
-  const localDate = new Date(`${dateVal} ${timeVal}`);
-  const displayDay = localDate.toDateString();
-
-  const multiPhase = ["Flight","Hotel","Cruise","Train"];
-  const includeDetails = !(multiPhase.includes(type) && phase && !["Check-in","Take off","Embarkation","Depart"].includes(phase));
-
-  let detailsFormatted = "";
-  if (row.DETAILS && includeDetails) {
-    let lines = row.DETAILS.split("\n").map(l => l.trim()).filter(l => l !== "");
-
-    switch(type) {
-      case "Hotel":
-        lines = lines.map(line => `Room Type: ${line}`);
-        break;
-      case "Flight":
-        if(lines[0]) lines[0] = `Flight #: ${lines[0]}`;
-        if(lines[1]) lines[1] = `Aircraft: ${lines[1]}`;
-        if(lines[2]) lines[2] = `Cabin: ${lines[2]}`;
-        break;
-      case "Cruise":
-        if(lines[0]) lines[0] = `Cruise Line: ${lines[0]}`;
-        if(lines[1]) lines[1] = `Ship: ${lines[1]}`;
-        if(lines[2]) lines[2] = `Cabin Type: ${lines[2]}`;
-        if(lines[3]) lines[3] = `Cabin #: ${lines[3]}`;
-        break;
-      case "Train":
-        if(lines[0]) lines[0] = `Train Company: ${lines[0]}`;
-        if(lines[1]) lines[1] = `Train #: ${lines[1]}`;
-        if(lines[2]) lines[2] = `Coach Type: ${lines[2]}`;
-        if(lines[3]) lines[3] = `Seat #: ${lines[3]}`;
-        break;
-    }
-
-    if (type === "Hotel" && phase === "Check-in" && duration) lines.unshift(duration);
-    if (type === "Cruise" && phase === "Embarkation" && duration) lines.unshift(duration);
-
-    detailsFormatted = lines.join("<br>");
-  }
-
-  return {
-    type: type,
-    phase,
-    timestamp,
-    day: displayDay,
-    title: title,
-    details: detailsFormatted,
-    address: row.ADDRESS,
-    bookingRef: row["BOOKING REF"],
-    duration,
-    startDate: dateVal,
-    startTime: timeVal,
-    startUTC: utcVal
-  };
 }
 
 /***********************
@@ -244,6 +154,7 @@ function transform(rows) {
     if (!minDate || startDateObj < minDate) minDate = startDateObj;
     if (!maxDate || endDateObj > maxDate) maxDate = endDateObj;
 
+    // Phase names
     let phases = { Start: "Start", End: "End" };
     if (row.TYPE === "Hotel") phases = { Start: "Check-in", End: "Check-out" };
     if (row.TYPE === "Flight") phases = { Start: "Take off", End: "Land" };
@@ -252,14 +163,49 @@ function transform(rows) {
 
     if (["Flight","Hotel","Cruise","Train"].includes(row.TYPE)) {
       const startDuration = calculateDuration(row.TYPE, startTimestamp, endTimestamp);
-      items.push(makeItem(row, startTimestamp, phases.Start, startDuration, row["START DATE"], row["START TIME"], row["START UTC"], row.TYPE));
-      items.push(makeItem(row, endTimestamp, phases.End, null, row["END DATE"], row["END TIME"], row["END UTC"], row.TYPE));
+
+      items.push(
+        makeItem(
+          row,
+          startTimestamp,
+          phases.Start,
+          startDuration,
+          row["START DATE"],
+          row["START TIME"],
+          row["START UTC"],
+          row.TYPE
+        )
+      );
+
+      items.push(
+        makeItem(
+          row,
+          endTimestamp,
+          phases.End,
+          null,
+          row["END DATE"],
+          row["END TIME"],
+          row["END UTC"],
+          row.TYPE
+        )
+      );
     } else {
-      items.push(makeItem(row, startTimestamp, null, null, row["START DATE"], row["START TIME"], row["START UTC"], row.TYPE));
+      items.push(
+        makeItem(
+          row,
+          startTimestamp,
+          null,
+          null,
+          row["START DATE"],
+          row["START TIME"],
+          row["START UTC"],
+          row.TYPE
+        )
+      );
     }
   });
 
-  // Add missing days
+  // Add empty placeholder days
   if (minDate && maxDate) {
     const daysMap = {};
     items.forEach(i => daysMap[i.day] = true);
@@ -289,321 +235,100 @@ function transform(rows) {
 }
 
 /***********************
- * GLOBAL CALENDAR DATA
+ * CALCULATE DURATION
  ***********************/
-async function buildGlobalCalendarData() {
-  GLOBAL_DATE_MAP = {};
-  GLOBAL_MIN_DATE = null;
-  GLOBAL_MAX_DATE = null;
-
-  for (const trip of TRIPS) {
-    try {
-      const rows = await fetchSheetRows(trip.id);
-      const items = transform(rows);
-
-      items.forEach(item => {
-        if (item.type === "None") return;
-
-        const iso = toISODateLocal(new Date(item.timestamp));
-        const dayStart = startOfDayLocal(new Date(item.timestamp));
-
-        if (!GLOBAL_MIN_DATE || dayStart < GLOBAL_MIN_DATE) GLOBAL_MIN_DATE = dayStart;
-        if (!GLOBAL_MAX_DATE || dayStart > GLOBAL_MAX_DATE) GLOBAL_MAX_DATE = dayStart;
-
-        if (!GLOBAL_DATE_MAP[iso]) {
-          GLOBAL_DATE_MAP[iso] = { trips: [], types: new Set() };
-        }
-
-        if (!GLOBAL_DATE_MAP[iso].trips.some(x => x.tripId === trip.id)) {
-          GLOBAL_DATE_MAP[iso].trips.push({ tripId: trip.id, tripName: trip.name });
-        }
-
-        GLOBAL_DATE_MAP[iso].types.add(item.type);
-      });
-
-    } catch (e) {
-      console.warn("Failed calendar load for trip:", trip.id, e);
+function calculateDuration(type, start, end) {
+  switch(type) {
+    case "Hotel": {
+      const nights = Math.ceil((end - start) / (1000*60*60*24));
+      const fixed = nights < 1 ? 1 : nights;
+      return `${fixed} night${fixed !== 1 ? "s" : ""}`;
     }
-  }
-
-  const now = new Date();
-  const nowMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  if (GLOBAL_MIN_DATE && GLOBAL_MAX_DATE) {
-    const minMonth = new Date(GLOBAL_MIN_DATE.getFullYear(), GLOBAL_MIN_DATE.getMonth(), 1);
-    const maxMonth = new Date(GLOBAL_MAX_DATE.getFullYear(), GLOBAL_MAX_DATE.getMonth(), 1);
-
-    if (nowMonth >= minMonth && nowMonth <= maxMonth) CALENDAR_CURRENT_MONTH = nowMonth;
-    else CALENDAR_CURRENT_MONTH = minMonth;
+    case "Cruise": {
+      const days = Math.ceil((end - start) / (1000*60*60*24));
+      return `${days} day${days > 1 ? "s" : ""}`;
+    }
+    default: {
+      const mins = Math.round((end - start) / 60000);
+      return `${Math.floor(mins/60)}h ${mins%60}m`;
+    }
   }
 }
 
 /***********************
- * POPUP PICKER
+ * MAKE ITEM
  ***********************/
-function showTripPicker(iso, options) {
-  return new Promise(resolve => {
-    const existing = document.getElementById("trip-picker-overlay");
-    if (existing) existing.remove();
+function makeItem(row, timestamp, phase = null, duration = null, dateVal, timeVal, utcVal, typeOverride = null) {
+  let title = row.TITLE;
+  const type = typeOverride || row.TYPE;
 
-    const overlay = document.createElement("div");
-    overlay.id = "trip-picker-overlay";
-    overlay.className = "trip-picker-overlay";
-
-    const modal = document.createElement("div");
-    modal.className = "trip-picker-modal";
-
-    const title = document.createElement("h3");
-    title.textContent = "Which trip do you want?";
-
-    const dateLabel = document.createElement("div");
-    dateLabel.className = "trip-picker-date";
-    dateLabel.textContent = iso;
-
-    const list = document.createElement("div");
-    list.className = "trip-picker-list";
-
-    options.forEach(opt => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "trip-picker-btn";
-      btn.textContent = opt.tripName;
-
-      btn.addEventListener("click", () => {
-        overlay.remove();
-        resolve(opt.tripId);
-      });
-
-      list.appendChild(btn);
-    });
-
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "trip-picker-cancel";
-    cancel.textContent = "Cancel";
-    cancel.addEventListener("click", () => {
-      overlay.remove();
-      resolve(null);
-    });
-
-    modal.appendChild(title);
-    modal.appendChild(dateLabel);
-    modal.appendChild(list);
-    modal.appendChild(cancel);
-
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) {
-        overlay.remove();
-        resolve(null);
-      }
-    });
-  });
-}
-
-/***********************
- * CALENDAR RENDER (ONE MONTH)
- ***********************/
-function renderGlobalCalendar() {
-  if (isShareMode()) return; // <-- share mode hides calendar
-
-  const timeline = document.getElementById("timeline");
-
-  const existing = document.getElementById("global-calendar");
-  if (existing) existing.remove();
-
-  if (!GLOBAL_MIN_DATE || !GLOBAL_MAX_DATE || !CALENDAR_CURRENT_MONTH) return;
-
-  const wrap = document.createElement("section");
-  wrap.id = "global-calendar";
-  wrap.className = "calendar";
-
-  const header = document.createElement("div");
-  header.className = "calendar-header";
-
-  const title = document.createElement("h2");
-  title.textContent = "Calendar";
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "calendar-toggle";
-  toggle.textContent = CALENDAR_VISIBLE ? "Hide Calendar" : "Show Calendar";
-
-  toggle.addEventListener("click", () => {
-    CALENDAR_VISIBLE = !CALENDAR_VISIBLE;
-    renderGlobalCalendar();
-  });
-
-  header.appendChild(title);
-  header.appendChild(toggle);
-  wrap.appendChild(header);
-
-  if (!CALENDAR_VISIBLE) {
-    timeline.insertBefore(wrap, timeline.firstChild);
-    return;
+  // Uber cleanup
+  if (type === "Uber") {
+    const parts = title.split(">");
+    if (parts.length > 1) title = "Uber to " + parts[1].trim();
+    else title = "Uber to " + title.replace(/\bUber\b/i,"").trim();
   }
 
-  const nav = document.createElement("div");
-  nav.className = "calendar-nav";
+  // Day grouping should be based on the sheet's date/time, NOT UTC
+  const localDate = new Date(`${dateVal} ${timeVal}`);
+  const displayDay = localDate.toDateString();
 
-  const prev = document.createElement("button");
-  prev.type = "button";
-  prev.className = "calendar-arrow";
-  prev.innerHTML = "←";
+  const multiPhase = ["Flight","Hotel","Cruise","Train"];
+  const includeDetails = !(multiPhase.includes(type) && phase && !["Check-in","Take off","Embarkation","Depart"].includes(phase));
 
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "calendar-arrow";
-  next.innerHTML = "→";
+  let detailsFormatted = [];
+  if (row.DETAILS && includeDetails) {
+    detailsFormatted = row.DETAILS.split("\n").filter(line => line.trim() !== "");
 
-  const monthLabel = document.createElement("div");
-  monthLabel.className = "calendar-month-label";
+    switch(type) {
+      case "Hotel":
+        detailsFormatted = detailsFormatted.map(line => `Room Type: ${line}`);
+        break;
 
-  nav.appendChild(prev);
-  nav.appendChild(monthLabel);
-  nav.appendChild(next);
+      case "Flight":
+        if(detailsFormatted[0]) detailsFormatted[0] = `Flight #: ${detailsFormatted[0]}`;
+        if(detailsFormatted[1]) detailsFormatted[1] = `Aircraft: ${detailsFormatted[1]}`;
+        if(detailsFormatted[2]) detailsFormatted[2] = `Cabin: ${detailsFormatted[2]}`;
+        break;
 
-  wrap.appendChild(nav);
+      case "Cruise":
+        if(detailsFormatted[0]) detailsFormatted[0] = `Cruise Line: ${detailsFormatted[0]}`;
+        if(detailsFormatted[1]) detailsFormatted[1] = `Ship: ${detailsFormatted[1]}`;
+        if(detailsFormatted[2]) detailsFormatted[2] = `Cabin Type: ${detailsFormatted[2]}`;
+        if(detailsFormatted[3]) detailsFormatted[3] = `Cabin #: ${detailsFormatted[3]}`;
+        if (phase === "Embarkation" && duration) detailsFormatted.unshift(`${duration}`);
+        break;
 
-  const monthNames = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-  ];
-
-  const minMonth = new Date(GLOBAL_MIN_DATE.getFullYear(), GLOBAL_MIN_DATE.getMonth(), 1);
-  const maxMonth = new Date(GLOBAL_MAX_DATE.getFullYear(), GLOBAL_MAX_DATE.getMonth(), 1);
-
-  monthLabel.textContent = `${monthNames[CALENDAR_CURRENT_MONTH.getMonth()]} ${CALENDAR_CURRENT_MONTH.getFullYear()}`;
-
-  prev.disabled = CALENDAR_CURRENT_MONTH <= minMonth;
-  next.disabled = CALENDAR_CURRENT_MONTH >= maxMonth;
-
-  prev.addEventListener("click", () => {
-    if (CALENDAR_CURRENT_MONTH <= minMonth) return;
-    CALENDAR_CURRENT_MONTH = new Date(CALENDAR_CURRENT_MONTH.getFullYear(), CALENDAR_CURRENT_MONTH.getMonth() - 1, 1);
-    renderGlobalCalendar();
-  });
-
-  next.addEventListener("click", () => {
-    if (CALENDAR_CURRENT_MONTH >= maxMonth) return;
-    CALENDAR_CURRENT_MONTH = new Date(CALENDAR_CURRENT_MONTH.getFullYear(), CALENDAR_CURRENT_MONTH.getMonth() + 1, 1);
-    renderGlobalCalendar();
-  });
-
-  wrap.appendChild(renderMonthGrid(CALENDAR_CURRENT_MONTH));
-  timeline.insertBefore(wrap, timeline.firstChild);
-}
-
-function renderMonthGrid(monthDate) {
-  const gridWrap = document.createElement("div");
-  gridWrap.className = "calendar-month";
-
-  const grid = document.createElement("div");
-  grid.className = "calendar-grid";
-
-  ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach(d => {
-    const el = document.createElement("div");
-    el.className = "calendar-weekday";
-    el.textContent = d;
-    grid.appendChild(el);
-  });
-
-  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const jsDay = firstDay.getDay();
-  const mondayIndex = (jsDay + 6) % 7;
-
-  for (let i = 0; i < mondayIndex; i++) {
-    const blank = document.createElement("div");
-    blank.className = "calendar-cell blank";
-    grid.appendChild(blank);
-  }
-
-  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateObj = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
-    const iso = toISODateLocal(dateObj);
-
-    const cell = document.createElement("button");
-    cell.type = "button";
-    cell.className = "calendar-cell";
-
-    const num = document.createElement("div");
-    num.className = "calendar-daynum";
-    num.textContent = day;
-
-    cell.appendChild(num);
-
-    if (iso === toISODateLocal(new Date())) cell.classList.add("today");
-
-    const info = GLOBAL_DATE_MAP[iso];
-
-    if (info && info.trips.length > 0) {
-      cell.classList.add("active");
-
-      // Tooltip text (trip names)
-      const tooltip = info.trips.map(t => t.tripName).join("\n");
-      cell.title = tooltip;
-
-      // DOTS
-      const dots = document.createElement("div");
-      dots.className = "calendar-dots";
-
-      const types = Array.from(info.types);
-      const limited = types.slice(0, MAX_CALENDAR_DOTS);
-
-      limited.forEach(type => {
-        const meta = TYPE_META[type] || { color: "#aaa" };
-        const dot = document.createElement("span");
-        dot.className = "calendar-dot";
-        dot.style.background = meta.color;
-        dots.appendChild(dot);
-      });
-
-      if (types.length > MAX_CALENDAR_DOTS) {
-        const more = document.createElement("span");
-        more.className = "calendar-dot-more";
-        more.textContent = "+";
-        dots.appendChild(more);
-      }
-
-      cell.appendChild(dots);
-
-      // CLICK BEHAVIOUR
-      cell.addEventListener("click", async () => {
-        let chosenTripId = info.trips[0].tripId;
-
-        if (info.trips.length > 1) {
-          const picked = await showTripPicker(iso, info.trips);
-          if (!picked) return;
-          chosenTripId = picked;
-        }
-
-        document.querySelectorAll(".trip-button").forEach(btn => {
-          btn.classList.toggle("active", btn.dataset.tripId === chosenTripId);
-        });
-
-        setTripInUrl(chosenTripId);
-        await loadTrip(chosenTripId);
-
-        setTimeout(() => {
-          const target = document.getElementById(`day-${iso}`);
-          if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 250);
-      });
-
-    } else {
-      cell.disabled = true;
-      cell.classList.add("inactive");
+      case "Train":
+        if(detailsFormatted[0]) detailsFormatted[0] = `Train Company: ${detailsFormatted[0]}`;
+        if(detailsFormatted[1]) detailsFormatted[1] = `Train #: ${detailsFormatted[1]}`;
+        if(detailsFormatted[2]) detailsFormatted[2] = `Coach Type: ${detailsFormatted[2]}`;
+        if(detailsFormatted[3]) detailsFormatted[3] = `Seat #: ${detailsFormatted[3]}`;
+        break;
     }
 
-    grid.appendChild(cell);
-  }
+    // Add Hotel duration to Check-in
+    if (type === "Hotel" && phase === "Check-in" && duration) {
+      detailsFormatted.unshift(`${duration}`);
+    }
 
-  gridWrap.appendChild(grid);
-  return gridWrap;
+    detailsFormatted = detailsFormatted.join("<br>");
+  } else detailsFormatted = "";
+
+  return {
+    type: type,
+    phase,
+    timestamp,
+    day: displayDay,
+    title: title,
+    details: detailsFormatted,
+    address: row.ADDRESS,
+    bookingRef: row["BOOKING REF"],
+    duration,
+    startDate: dateVal,
+    startTime: timeVal,
+    startUTC: utcVal
+  };
 }
 
 /***********************
@@ -613,35 +338,33 @@ function render(items, tripName, tripId) {
   const timeline = document.getElementById("timeline");
   timeline.innerHTML = "";
 
-  renderGlobalCalendar();
-
   // Trip title heading
   const tripTitle = document.createElement("h1");
   tripTitle.className = "trip-title";
   tripTitle.textContent = tripName;
   timeline.appendChild(tripTitle);
 
-  // Share link under title (hide in share mode)
-if (!isShareMode()) {
-  const shareLink = document.createElement("button");
-  shareLink.type = "button";
-  shareLink.className = "trip-share-link";
-  shareLink.textContent = "Share this trip";
+  // Share button under title (hide in share mode)
+  if (!isShareMode()) {
+    const shareLink = document.createElement("button");
+    shareLink.type = "button";
+    shareLink.className = "trip-share-link";
+    shareLink.textContent = "Share this trip";
 
-  shareLink.addEventListener("click", async () => {
-    const url = buildShareUrl(tripId);
+    shareLink.addEventListener("click", async () => {
+      const url = buildShareUrl(tripId);
 
-    try {
-      await navigator.clipboard.writeText(url);
-      shareLink.textContent = "Copied!";
-      setTimeout(() => shareLink.textContent = "Share this trip", 1200);
-    } catch {
-      prompt("Copy this link:", url);
-    }
-  });
+      try {
+        await navigator.clipboard.writeText(url);
+        shareLink.textContent = "Copied!";
+        setTimeout(() => shareLink.textContent = "Share this trip", 1200);
+      } catch {
+        prompt("Copy this link:", url);
+      }
+    });
 
-  timeline.appendChild(shareLink);
-}
+    timeline.appendChild(shareLink);
+  }
 
   const days = {};
   items.forEach(item => {
@@ -649,16 +372,20 @@ if (!isShareMode()) {
     days[item.day].push(item);
   });
 
+  const todayStart = startOfTodayLocal();
+
   Object.entries(days).forEach(([day, dayItems]) => {
-    if (HIDE_PAST_DAYS && isDayInPast(day)) return;
+    // Hide days that have passed
+    const dayDateObj = new Date(dayItems[0].timestamp);
+    const dayStart = new Date(dayDateObj.getFullYear(), dayDateObj.getMonth(), dayDateObj.getDate()).getTime();
+    if (dayStart < todayStart) return;
+
+    const iso = toISODate(dayDateObj);
 
     const section = document.createElement("section");
     section.className = "day";
-
-    const dayISO = toISODateLocal(new Date(dayItems[0].timestamp));
-    section.id = `day-${dayISO}`;
-
-    section.innerHTML = `<h3>${formatPrettyDate(new Date(dayItems[0].timestamp))}</h3>`;
+    section.id = `day-${iso}`;
+    section.innerHTML = `<h3>${formatPrettyDate(dayDateObj)}</h3>`;
 
     dayItems.forEach(item => {
       const meta = TYPE_META[item.type] || { icon: "circle", color: "#aaa" };
@@ -666,6 +393,7 @@ if (!isShareMode()) {
       el.className = "item";
 
       let phaseText = item.phase || "";
+      if (["Flight","Train"].includes(item.type)) phaseText = item.phase || "";
       if (item.type === "Lounge") phaseText = "";
       if (item.type === "Show") phaseText = item.duration ? `${item.duration}` : "";
 
@@ -686,7 +414,7 @@ if (!isShareMode()) {
         <div class="details${placeholderClass}">
           ${timeHTML}
           <div class="title"><strong>${item.title}</strong></div>
-          ${phaseText ? `<div>${phaseText}</div>` : ""}
+          ${phaseText ? `<div class="phase">${phaseText}</div>` : ""}
           ${item.details ? `<div class="item-details">${item.details}</div>` : ""}
           ${item.bookingRef ? `<div class="bookingRef">${item.bookingRef}</div>` : ""}
           ${item.address ? `<button class="directions" onclick="window.open('https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}','_blank')">Get Directions</button>` : ""}
@@ -703,9 +431,102 @@ if (!isShareMode()) {
 }
 
 /***********************
+ * TRIP SELECTOR (BUTTONS)
+ ***********************/
+async function initTripSelector() {
+  const container = document.getElementById("trip-buttons-inner");
+  container.innerHTML = "";
+
+  // Share mode: only show one trip (from URL)
+  if (isShareMode()) {
+    const tripFromUrl = new URLSearchParams(window.location.search).get("trip");
+    if (!tripFromUrl) {
+      document.getElementById("timeline").innerHTML = `<p style="color:red">No trip specified.</p>`;
+      return;
+    }
+
+    activeTripId = tripFromUrl;
+    await loadTrip(tripFromUrl, { updateUrl: false });
+    return;
+  }
+
+  // Hide trips that are fully in the past by checking each tab quickly
+  const visibleTrips = [];
+
+  for (const trip of TRIPS) {
+    try {
+      const rows = await fetchSheetRows(trip.id);
+      const items = transform(rows);
+
+      const realItems = items.filter(i => i.type !== "None");
+      if (realItems.length === 0) continue;
+
+      const latest = realItems.reduce((max, i) => (i.timestamp > max ? i.timestamp : max), realItems[0].timestamp);
+      if (latest >= startOfTodayLocal()) {
+        visibleTrips.push(trip);
+      }
+    } catch {
+      // If tab fails, keep it visible rather than losing it
+      visibleTrips.push(trip);
+    }
+  }
+
+  // Build buttons
+  visibleTrips.forEach((trip, index) => {
+    const btn = document.createElement("button");
+    btn.className = "trip-button";
+    btn.textContent = trip.name;
+    btn.dataset.tripId = trip.id;
+
+    btn.addEventListener("click", async () => {
+      document.querySelectorAll(".trip-button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeTripId = trip.id;
+
+      await loadTrip(trip.id, { updateUrl: true });
+
+      // If calendar open, jump to trip start month
+      const cal = document.getElementById("calendar-wrap");
+      const isOpen = cal && cal.style.display !== "none";
+      if (isOpen) {
+        const rows = await fetchSheetRows(trip.id);
+        const items = transform(rows);
+        const tripStart = getTripStartDate(items);
+        if (tripStart) setCalendarMonth(tripStart.getFullYear(), tripStart.getMonth());
+      }
+    });
+
+    container.appendChild(btn);
+
+    // Auto-load first trip unless URL specifies one
+    if (index === 0) btn.classList.add("active");
+  });
+
+  // URL trip support
+  const tripFromUrl = new URLSearchParams(window.location.search).get("trip");
+  const firstTrip = visibleTrips[0];
+
+  if (tripFromUrl && visibleTrips.some(t => t.id === tripFromUrl)) {
+    activeTripId = tripFromUrl;
+    await loadTrip(tripFromUrl, { updateUrl: false });
+
+    // Activate correct button
+    document.querySelectorAll(".trip-button").forEach(b => {
+      if (b.dataset.tripId === tripFromUrl) b.classList.add("active");
+      else b.classList.remove("active");
+    });
+  } else if (firstTrip) {
+    activeTripId = firstTrip.id;
+    await loadTrip(firstTrip.id, { updateUrl: true });
+  }
+
+  lucide.createIcons();
+}
+
+/***********************
  * LOAD TRIP
  ***********************/
-async function loadTrip(tabName) {
+async function loadTrip(tabName, opts = { updateUrl: true }) {
   try {
     const rows = await fetchSheetRows(tabName);
     const items = transform(rows);
@@ -714,6 +535,12 @@ async function loadTrip(tabName) {
     const displayName = trip ? trip.name : tabName;
 
     render(items, displayName, tabName);
+
+    // Update URL
+    if (!isShareMode() && opts.updateUrl) {
+      history.pushState({}, "", `?trip=${encodeURIComponent(tabName)}`);
+    }
+
   } catch (err) {
     document.getElementById("timeline").innerHTML =
       `<p style="color:red">Error loading trip: ${err.message}</p>`;
@@ -722,82 +549,264 @@ async function loadTrip(tabName) {
 }
 
 /***********************
- * TRIP SELECTOR
+ * CALENDAR (GLOBAL)
  ***********************/
-function initTripSelector() {
-  const container = document.getElementById("trip-buttons");
-  container.innerHTML = "";
+function initCalendar() {
+  if (isShareMode()) return;
 
-  if (isShareMode()) {
-    // Share mode: hide the menu entirely
-    container.style.display = "none";
-    return;
-  } else {
-    container.style.display = "";
+  const main = document.body;
+
+  const wrap = document.createElement("div");
+  wrap.id = "calendar-wrap";
+  wrap.style.display = "none"; // starts hidden
+  main.insertBefore(wrap, document.getElementById("timeline"));
+
+  wrap.innerHTML = `
+    <div class="calendar-header">
+      <button class="cal-nav" id="cal-prev" title="Previous month">
+        <i data-lucide="chevron-left"></i>
+      </button>
+      <div class="calendar-title" id="cal-title"></div>
+      <button class="cal-nav" id="cal-next" title="Next month">
+        <i data-lucide="chevron-right"></i>
+      </button>
+    </div>
+
+    <div class="calendar-weekdays">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+
+    <div class="calendar-grid" id="calendar-grid"></div>
+  `;
+
+  document.getElementById("cal-prev").addEventListener("click", () => {
+    calendarState.month--;
+    if (calendarState.month < 0) {
+      calendarState.month = 11;
+      calendarState.year--;
+    }
+    renderCalendar();
+  });
+
+  document.getElementById("cal-next").addEventListener("click", () => {
+    calendarState.month++;
+    if (calendarState.month > 11) {
+      calendarState.month = 0;
+      calendarState.year++;
+    }
+    renderCalendar();
+  });
+
+  buildGlobalCalendarData().then(() => {
+    renderCalendar();
+  });
+}
+
+async function buildGlobalCalendarData() {
+  calendarState.dataByDate = {};
+
+  for (const trip of TRIPS) {
+    try {
+      const rows = await fetchSheetRows(trip.id);
+      const items = transform(rows);
+
+      const realItems = items.filter(i => i.type !== "None");
+
+      // Map by day ISO
+      realItems.forEach(item => {
+        const dayObj = new Date(item.timestamp);
+        const iso = toISODate(dayObj);
+
+        if (!calendarState.dataByDate[iso]) calendarState.dataByDate[iso] = [];
+        calendarState.dataByDate[iso].push({
+          tripId: trip.id,
+          tripName: trip.name
+        });
+      });
+
+    } catch (e) {
+      console.warn("Calendar trip load failed:", trip.id);
+    }
+  }
+}
+
+function setCalendarMonth(year, monthIndex) {
+  calendarState.year = year;
+  calendarState.month = monthIndex;
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+  ];
+
+  const title = document.getElementById("cal-title");
+  const grid = document.getElementById("calendar-grid");
+
+  if (!title || !grid) return;
+
+  title.textContent = `${months[calendarState.month]} ${calendarState.year}`;
+  grid.innerHTML = "";
+
+  // Calendar starts on Monday
+  const firstDay = new Date(calendarState.year, calendarState.month, 1);
+  const lastDay = new Date(calendarState.year, calendarState.month + 1, 0);
+
+  const startWeekday = (firstDay.getDay() + 6) % 7; // convert Sunday=0 to Monday=0
+  const totalDays = lastDay.getDate();
+
+  // Empty leading cells
+  for (let i = 0; i < startWeekday; i++) {
+    const empty = document.createElement("div");
+    empty.className = "calendar-day empty";
+    grid.appendChild(empty);
   }
 
-  const tripFromUrl = getTripFromUrl();
-  let initialTrip = TRIPS[0];
+  for (let day = 1; day <= totalDays; day++) {
+    const d = new Date(calendarState.year, calendarState.month, day);
+    const iso = toISODate(d);
 
-  if (tripFromUrl) {
-    const match = TRIPS.find(t => t.id === tripFromUrl);
-    if (match) initialTrip = match;
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "calendar-day";
+    cell.textContent = day;
+
+    const tripsOnDay = calendarState.dataByDate[iso] || [];
+
+    if (tripsOnDay.length > 0) {
+      cell.classList.add("has-event");
+
+      // Hover tooltip with trip names
+      const uniqueTrips = [...new Set(tripsOnDay.map(t => t.tripName))];
+      cell.title = uniqueTrips.join(" • ");
+
+      cell.addEventListener("click", async () => {
+        // If only one trip, go directly
+        const uniqueTripIds = [...new Set(tripsOnDay.map(t => t.tripId))];
+
+        if (uniqueTripIds.length === 1) {
+          await goToCalendarTripDay(uniqueTripIds[0], iso);
+        } else {
+          showTripChooser(uniqueTripIds, iso);
+        }
+      });
+    }
+
+    grid.appendChild(cell);
   }
 
-  TRIPS.forEach(trip => {
-    const btn = document.createElement("button");
-    btn.className = "trip-button";
-    btn.textContent = trip.name;
-    btn.dataset.tripId = trip.id;
+  lucide.createIcons();
+}
 
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".trip-button").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
+async function goToCalendarTripDay(tripId, iso) {
+  // Load the trip
+  activeTripId = tripId;
 
-      setTripInUrl(trip.id);
-      loadTrip(trip.id);
+  // Activate menu button
+  document.querySelectorAll(".trip-button").forEach(b => {
+    if (b.dataset.tripId === tripId) b.classList.add("active");
+    else b.classList.remove("active");
+  });
+
+  await loadTrip(tripId, { updateUrl: true });
+
+  // Close calendar automatically
+  const cal = document.getElementById("calendar-wrap");
+  const toggle = document.getElementById("calendar-toggle");
+  if (cal) cal.style.display = "none";
+  if (toggle) toggle.classList.remove("active");
+
+  // Scroll to the day
+  setTimeout(() => scrollToDayISO(iso), 250);
+}
+
+function showTripChooser(tripIds, iso) {
+  // Build overlay
+  const overlay = document.createElement("div");
+  overlay.className = "trip-chooser-overlay";
+
+  const box = document.createElement("div");
+  box.className = "trip-chooser-box";
+
+  box.innerHTML = `
+    <h3>Which trip?</h3>
+    <div class="trip-chooser-buttons"></div>
+    <button class="trip-chooser-cancel">Cancel</button>
+  `;
+
+  const btnWrap = box.querySelector(".trip-chooser-buttons");
+
+  tripIds.forEach(id => {
+    const trip = TRIPS.find(t => t.id === id);
+    const name = trip ? trip.name : id;
+
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = name;
+
+    b.addEventListener("click", async () => {
+      document.body.removeChild(overlay);
+      await goToCalendarTripDay(id, iso);
     });
 
-    container.appendChild(btn);
+    btnWrap.appendChild(b);
   });
 
-  document.querySelectorAll(".trip-button").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.tripId === initialTrip.id);
+  box.querySelector(".trip-chooser-cancel").addEventListener("click", () => {
+    document.body.removeChild(overlay);
   });
 
-  setTripInUrl(initialTrip.id);
-  loadTrip(initialTrip.id);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
 }
 
 /***********************
- * BACK/FORWARD SUPPORT
+ * CALENDAR TOGGLE BUTTON
  ***********************/
-window.addEventListener("popstate", () => {
-  const tripFromUrl = getTripFromUrl();
-  if (!tripFromUrl) return;
+function initCalendarToggle() {
+  if (isShareMode()) return;
 
-  document.querySelectorAll(".trip-button").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.tripId === tripFromUrl);
+  const btn = document.getElementById("calendar-toggle");
+  if (!btn) return;
+
+  btn.addEventListener("click", () => {
+    const cal = document.getElementById("calendar-wrap");
+    if (!cal) return;
+
+    const isOpen = cal.style.display !== "none";
+
+    if (isOpen) {
+      cal.style.display = "none";
+      btn.classList.remove("active");
+    } else {
+      cal.style.display = "block";
+      btn.classList.add("active");
+
+      // Jump to active trip start month if possible
+      if (activeTripId) {
+        const trip = TRIPS.find(t => t.id === activeTripId);
+        if (trip) {
+          fetchSheetRows(trip.id).then(rows => {
+            const items = transform(rows);
+            const tripStart = getTripStartDate(items);
+            if (tripStart) setCalendarMonth(tripStart.getFullYear(), tripStart.getMonth());
+          });
+        }
+      }
+    }
+
+    lucide.createIcons();
   });
 
-  loadTrip(tripFromUrl);
-});
+  lucide.createIcons();
+}
 
 /***********************
  * INIT APP
  ***********************/
-async function initApp() {
-  await buildGlobalCalendarData();
-
-  // If share mode: just load that trip directly
-  if (isShareMode()) {
-    const tripId = getTripFromUrl() || TRIPS[0].id;
-    await loadTrip(tripId);
-    initTripSelector(); // hides menu
-    return;
-  }
-
-  initTripSelector();
-}
-
-initApp();
+applyShareModeUI();
+initCalendar();
+initCalendarToggle();
+initTripSelector();

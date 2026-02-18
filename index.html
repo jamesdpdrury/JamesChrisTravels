@@ -17,9 +17,14 @@
 </head>
 <body>
 
-  <header id="app-header">
-  <h1>James & Chris UK Travels</h1>
-  <div id="trip-buttons" class="trip-buttons"></div>
+ <header id="app-header">
+  <h1 id="site-title">James & Chris UK Travels</h1>
+  <div class="trip-buttons">
+  <button id="calendar-toggle" class="trip-button" title="Show Calendar">
+    <i data-lucide="calendar"></i>
+  </button>
+  <div id="trip-buttons-inner" class="trip-buttons-inner"></div>
+</div>
 </header>
   <nav id="filters"></nav>
   <main id="timeline"></main>
