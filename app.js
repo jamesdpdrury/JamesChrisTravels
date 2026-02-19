@@ -30,6 +30,7 @@ const TYPE_META = {
   Bus: { icon: "bus", color: "var(--bus)" },
   Port: { icon: "map-pin", color: "var(--port)" },
   Uber: { icon: "car", color: "var(--uber)" },
+  Walk: { icon: "footprints", color: "var(--walk)" },
 
   Drive: { icon: "car-front", color: "var(--drive)" },
   Food: { icon: "hamburger", color: "var(--food)" },
@@ -267,6 +268,13 @@ function makeItem(row, timestamp, phase = null, duration = null, dateVal, timeVa
     const parts = title.split(">");
     if (parts.length > 1) title = "Uber to " + parts[1].trim();
     else title = "Uber to " + title.replace(/\bUber\b/i,"").trim();
+  }
+
+  // Walk cleanup
+  if (type === "Walk") {
+    const parts = title.split(">");
+    if (parts.length > 1) title = "Walk to " + parts[1].trim();
+    else title = "Walk to " + title.replace(/\bUber\b/i,"").trim();
   }
 
   // Day grouping should be based on the sheet's date/time, NOT UTC
