@@ -5,6 +5,7 @@ const SHEET_ID = "1C6YKplUWHzLTxtJKhmdUocJjKaf7a2JAdsO6Y2RVlxM";
 
 const TRIPS = [
   { name: "New York", id: "New York Feb 26" },
+  { name: "Australia", id: "Australia March 26"} ,
   { name: "Steffi's Wedding", id: "Pisa May 26" },
   { name: "Virgin Voyage", id: "Virgin Voyage June 26" },
   { name: "Center Parcs", id: "Center Parcs June 26" },
