@@ -9,6 +9,7 @@ const TRIPS = [
   { name: "Steffi's Wedding", id: "Pisa May 26" },
   { name: "Virgin Voyage", id: "Virgin Voyage June 26" },
   { name: "Center Parcs", id: "Center Parcs June 26" },
+  { name: "Rome", id: "Royal Caribbean July 26" },
   { name: "Norway", id: "P&O July 26" },
   { name: "Paris", id: "Paris Aug 26" },
   { name: "LAX", id: "LAX Aug 26" },
