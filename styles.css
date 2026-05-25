@@ -74,10 +74,15 @@ button {
 }
 
 .item .details {
+
   flex-grow: 1;
+
   display: flex;
+
   flex-direction: column;
-  position: relative;
+
+  min-width: 0;
+
 }
 
 /* Time at the top */
@@ -110,29 +115,50 @@ button {
   color: #555;
 }
 
-/* Booking reference bottom right */
-.item .details .bookingRef {
-  position: absolute;
-  bottom: 5px;
-  right: 10px;
-  font-size: 0.8em;
-  color: #888;
-}
+/* Booking reference */
+
 
 /* Get Directions button at bottom */
 .item .details .directions {
-  margin-top: 10px;
+
+  margin-top: 12px;
+
+  margin-bottom: 10px;
+
   padding: 7px 12px;
+
   border: none;
+
   border-radius: 8px;
+
   background: #eee;
+
   font-size: 0.9em;
+
   cursor: pointer;
+
   align-self: flex-start;
+
   text-decoration: none;
+
   color: #333;
+
 }
 
+.item .details .bookingRef {
+
+ margin-top: 10px;
+  padding-top: 10px;
+
+  border-top: 1px solid #eee;
+
+  font-size: 0.8em;
+
+  color: #888;
+
+  word-break: break-word;
+
+}
 .item .details .directions:hover {
   background: #ddd;
 }
